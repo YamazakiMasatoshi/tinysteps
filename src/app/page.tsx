@@ -179,6 +179,22 @@ export default function Home() {
     );
   };
 
+  const habitColors = [
+    'bg-red-500',
+    'bg-blue-500',
+    'bg-emerald-500',
+    'bg-yellow-500',
+    'bg-purple-500',
+    'bg-orange-500',
+    'bg-pink-500',
+    'bg-cyan-500',
+  ];
+
+  const getHabitColor = (habitId: string) => {
+    const index = habits.findIndex(h => h.id === habitId);
+    return index >= 0 ? habitColors[index % habitColors.length] : 'bg-gray-500';
+  };
+
   const handlePreviousMonth = () => {
     const newMonth = new Date(currentMonth);
     newMonth.setMonth(newMonth.getMonth() - 1);
@@ -382,12 +398,6 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-gray-950 text-white">
       <div className="container mx-auto px-4 py-16">
-        {/* 接続状態の表示 */}
-        <div className="mb-8 p-4 bg-gray-800 rounded-lg border border-gray-700 text-center">
-          <p className="text-sm text-gray-400 mb-1">Supabase接続状態</p>
-          <p className="text-lg font-semibold">{connectionStatus}</p>
-        </div>
-
         {/* ヘッダー部分 */}
         <div className="text-center mb-12">
           <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
@@ -506,7 +516,7 @@ export default function Home() {
             <div>
               <h3 className="font-semibold text-blue-300 mb-2">TinyStepsのコツ</h3>
               <p className="text-sm text-gray-400">
-                完璧を目指さず、2分だけでもOK！小さな継続が大きな変化を生みます。
+                完璧を目指さず、2分だけでもOK！小さな継続が大きな変化を生む。
               </p>
             </div>
           </div>
@@ -778,8 +788,11 @@ export default function Home() {
                     <div className="text-sm">{day}</div>
                     {hasCompletions && (
                       <div className="flex gap-0.5 mt-1">
-                        {Array.from({ length: Math.min(completedHabits.size, 3) }).map((_, i) => (
-                          <div key={i} className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                        {Array.from(completedHabits).slice(0, 3).map((habitId) => (
+                          <div
+                            key={habitId}
+                            className={`w-1.5 h-1.5 rounded-full ${getHabitColor(habitId)}`}
+                          />
                         ))}
                       </div>
                     )}
@@ -798,8 +811,11 @@ export default function Home() {
 
                 return (
                   <div key={habit.id} className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
-                    <span>{habit.title}</span>
-                    <span className="text-emerald-400 font-semibold">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-3 h-3 rounded-full ${getHabitColor(habit.id)}`} />
+                      <span>{habit.title}</span>
+                    </div>
+                    <span className={`font-semibold ${getHabitColor(habit.id).replace('bg-', 'text-')}`}>
                       {completionCount}日完了
                     </span>
                   </div>
