@@ -27,10 +27,15 @@ export default function Home() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [monthlyCompletions, setMonthlyCompletions] = useState<Map<string, Set<string>>>(new Map());
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [selectedDateCompletions, setSelectedDateCompletions] = useState<any[]>([]);
 
   useEffect(() => {
     fetchHabits();
     fetchCompletions();
+    fetchMonthlyCompletions(currentMonth);
   }, []);
 
   const fetchHabits = async () => {
@@ -84,6 +89,108 @@ export default function Home() {
     } catch (err) {
       console.error('予期しないエラー:', err);
     }
+  };
+
+  const fetchMonthlyCompletions = async (date: Date) => {
+    try {
+      const year = date.getFullYear();
+      const month = date.getMonth() + 1; // 0-11 → 1-12
+      const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+
+      // 月の最終日を取得
+      const lastDay = new Date(year, month, 0).getDate();
+      const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+
+      const { data, error } = await supabase
+        .from('completion_logs')
+        .select('habit_id, completed_date')
+        .gte('completed_date', startDate)
+        .lte('completed_date', endDate);
+
+      if (error) {
+        console.error('月間完了記録の取得に失敗しました:', error);
+        return;
+      }
+
+      // 日付ごとに完了した習慣IDをグループ化
+      const completionsMap = new Map<string, Set<string>>();
+      data?.forEach(log => {
+        if (!completionsMap.has(log.completed_date)) {
+          completionsMap.set(log.completed_date, new Set());
+        }
+        completionsMap.get(log.completed_date)?.add(log.habit_id);
+      });
+
+      setMonthlyCompletions(completionsMap);
+      console.log('✅ 月間完了記録を取得しました:', completionsMap);
+    } catch (err) {
+      console.error('予期しないエラー:', err);
+    }
+  };
+
+  const fetchDateCompletions = async (dateStr: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('completion_logs')
+        .select(`
+          *,
+          habits (
+            id,
+            title
+          )
+        `)
+        .eq('completed_date', dateStr);
+
+      if (error) {
+        console.error('日付詳細の取得に失敗しました:', error);
+        return;
+      }
+
+      setSelectedDateCompletions(data || []);
+      setSelectedDate(dateStr);
+      console.log('✅ 日付詳細を取得しました:', data);
+    } catch (err) {
+      console.error('予期しないエラー:', err);
+    }
+  };
+
+  const getDaysInMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    return new Date(year, month + 1, 0).getDate();
+  };
+
+  const getFirstDayOfMonth = (date: Date) => {
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    return new Date(year, month, 1).getDay(); // 0=日曜, 1=月曜, ...
+  };
+
+  const formatDate = (year: number, month: number, day: number) => {
+    return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  };
+
+  const isToday = (year: number, month: number, day: number) => {
+    const today = new Date();
+    return (
+      today.getFullYear() === year &&
+      today.getMonth() + 1 === month &&
+      today.getDate() === day
+    );
+  };
+
+  const handlePreviousMonth = () => {
+    const newMonth = new Date(currentMonth);
+    newMonth.setMonth(newMonth.getMonth() - 1);
+    setCurrentMonth(newMonth);
+    fetchMonthlyCompletions(newMonth);
+  };
+
+  const handleNextMonth = () => {
+    const newMonth = new Date(currentMonth);
+    newMonth.setMonth(newMonth.getMonth() + 1);
+    setCurrentMonth(newMonth);
+    fetchMonthlyCompletions(newMonth);
   };
 
   const handleToggleCompletion = async (habitId: string) => {
@@ -540,6 +647,167 @@ export default function Home() {
           </div>
         )}
 
+        {/* 日付詳細モーダル */}
+        {selectedDate && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800 max-h-[80vh] overflow-y-auto">
+              <h2 className="text-2xl font-bold mb-6">
+                {new Date(selectedDate + 'T00:00:00').toLocaleDateString('ja-JP', {
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric',
+                  weekday: 'long'
+                })}の記録
+              </h2>
+
+              {selectedDateCompletions.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">
+                  この日の記録はありません
+                </p>
+              ) : (
+                <div className="space-y-4 mb-6">
+                  {selectedDateCompletions.map((completion) => (
+                    <div key={completion.id} className="bg-gray-800 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-emerald-400">✓</span>
+                        <h3 className="font-semibold">
+                          {completion.habits?.title || '削除された習慣'}
+                        </h3>
+                      </div>
+                      {completion.memo && (
+                        <div className="ml-6 mt-2 flex items-start gap-2">
+                          <span className="text-emerald-400 text-sm">💬</span>
+                          <p className="text-sm text-gray-300 italic">
+                            {completion.memo}
+                          </p>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-500 ml-6 mt-2">
+                        {new Date(completion.completed_at).toLocaleTimeString('ja-JP', {
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}に完了
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={() => {
+                  setSelectedDate(null);
+                  setSelectedDateCompletions([]);
+                }}
+                className="w-full px-4 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* カレンダーセクション */}
+        <div className="container mx-auto px-4 py-8">
+          <div className="max-w-4xl mx-auto bg-gray-900 rounded-xl shadow-2xl p-8 border border-gray-800">
+            <div className="flex items-center gap-2 mb-6">
+              <span className="text-2xl">📅</span>
+              <h2 className="text-2xl font-semibold">完了カレンダー</h2>
+            </div>
+
+            {/* 月の切り替え */}
+            <div className="flex items-center justify-between mb-6">
+              <button
+                onClick={handlePreviousMonth}
+                className="p-2 hover:bg-gray-800 rounded transition-colors"
+              >
+                <span className="text-2xl">←</span>
+              </button>
+
+              <h3 className="text-xl font-semibold">
+                {currentMonth.getFullYear()}年{currentMonth.getMonth() + 1}月
+              </h3>
+
+              <button
+                onClick={handleNextMonth}
+                className="p-2 hover:bg-gray-800 rounded transition-colors"
+              >
+                <span className="text-2xl">→</span>
+              </button>
+            </div>
+
+            {/* カレンダーグリッド */}
+            <div className="grid grid-cols-7 gap-2 mb-6">
+              {/* 曜日ヘッダー */}
+              {['日', '月', '火', '水', '木', '金', '土'].map((day, index) => (
+                <div
+                  key={day}
+                  className={`text-center font-semibold py-2 ${index === 0 ? 'text-red-400' : index === 6 ? 'text-blue-400' : 'text-gray-400'
+                    }`}
+                >
+                  {day}
+                </div>
+              ))}
+
+              {/* 空白セル（月の最初の曜日まで） */}
+              {Array.from({ length: getFirstDayOfMonth(currentMonth) }).map((_, index) => (
+                <div key={`empty-${index}`} className="aspect-square" />
+              ))}
+
+              {/* 日付セル */}
+              {Array.from({ length: getDaysInMonth(currentMonth) }).map((_, index) => {
+                const day = index + 1;
+                const year = currentMonth.getFullYear();
+                const month = currentMonth.getMonth() + 1;
+                const dateStr = formatDate(year, month, day);
+                const completedHabits = monthlyCompletions.get(dateStr);
+                const hasCompletions = completedHabits && completedHabits.size > 0;
+                const today = isToday(year, month, day);
+
+                return (
+                  <div
+                    key={day}
+                    onClick={() => hasCompletions && fetchDateCompletions(dateStr)}
+                    className={`
+                    aspect-square flex flex-col items-center justify-center rounded-lg
+                    ${today ? 'ring-2 ring-blue-500' : ''}
+                    ${hasCompletions ? 'bg-emerald-900 bg-opacity-30' : 'bg-gray-800'}
+                    ${hasCompletions ? 'hover:bg-opacity-50 cursor-pointer' : ''}
+                    transition-all
+                  `}
+                  >
+                    <div className="text-sm">{day}</div>
+                    {hasCompletions && (
+                      <div className="flex gap-0.5 mt-1">
+                        {Array.from({ length: Math.min(completedHabits.size, 3) }).map((_, i) => (
+                          <div key={i} className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* 習慣ごとの統計 */}
+            <div className="space-y-2">
+              <h3 className="text-lg font-semibold mb-4">今月の達成状況</h3>
+              {habits.map(habit => {
+                const completionCount = Array.from(monthlyCompletions.values())
+                  .filter(habitIds => habitIds.has(habit.id))
+                  .length;
+
+                return (
+                  <div key={habit.id} className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
+                    <span>{habit.title}</span>
+                    <span className="text-emerald-400 font-semibold">
+                      {completionCount}日完了
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
     </main>
   );
