@@ -1,7 +1,45 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { supabase } from '@/utils/supabase';
+
 export default function Home() {
+  const [connectionStatus, setConnectionStatus] = useState<string>('確認中...');
+
+  useEffect(() => {
+    const testConnection = async () => {
+      try {
+        // Supabaseに接続してテストクエリを実行
+        const { data, error } = await supabase
+          .from('habits')
+          .select('count')
+          .limit(1);
+
+        if (error) {
+          console.error('Supabase接続エラー:', error);
+          setConnectionStatus(`❌ 接続失敗: ${error.message}`);
+        } else {
+          console.log('✅ Supabase接続成功！');
+          setConnectionStatus('✅ Supabaseに接続成功！');
+        }
+      } catch (err) {
+        console.error('予期しないエラー:', err);
+        setConnectionStatus('❌ 予期しないエラーが発生しました');
+      }
+    };
+
+    testConnection();
+  }, []);
+
   return (
     <main className="min-h-screen bg-gray-950 text-white">
       <div className="container mx-auto px-4 py-16">
+        {/* 接続状態の表示 */}
+        <div className="mb-8 p-4 bg-gray-800 rounded-lg border border-gray-700 text-center">
+          <p className="text-sm text-gray-400 mb-1">Supabase接続状態</p>
+          <p className="text-lg font-semibold">{connectionStatus}</p>
+        </div>
+
         {/* ヘッダー部分 */}
         <div className="text-center mb-12">
           <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
