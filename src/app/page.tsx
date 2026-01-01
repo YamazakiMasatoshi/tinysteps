@@ -679,20 +679,20 @@ export default function Home() {
                   {selectedDateCompletions.map((completion) => (
                     <div key={completion.id} className="bg-gray-800 rounded-lg p-4">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="text-emerald-400">✓</span>
+                        <div className={`w-3 h-3 rounded-full ${getHabitColor(completion.habit_id)}`} />
                         <h3 className="font-semibold">
                           {completion.habits?.title || '削除された習慣'}
                         </h3>
                       </div>
                       {completion.memo && (
-                        <div className="ml-6 mt-2 flex items-start gap-2">
+                        <div className="ml-5 mt-2 flex items-start gap-2">
                           <span className="text-emerald-400 text-sm">💬</span>
                           <p className="text-sm text-gray-300 italic">
                             {completion.memo}
                           </p>
                         </div>
                       )}
-                      <p className="text-xs text-gray-500 ml-6 mt-2">
+                      <p className="text-xs text-gray-500 ml-5 mt-2">
                         {new Date(completion.completed_at).toLocaleTimeString('ja-JP', {
                           hour: '2-digit',
                           minute: '2-digit'
