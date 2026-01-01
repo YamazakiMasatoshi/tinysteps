@@ -20,6 +20,10 @@ export default function Home() {
   const [habits, setHabits] = useState<Habit[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [completedHabitIds, setCompletedHabitIds] = useState<Set<string>>(new Set());
+  const [completionMemos, setCompletionMemos] = useState<Map<string, string>>(new Map());
+  const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
+  const [currentHabitId, setCurrentHabitId] = useState<string | null>(null);
+  const [memo, setMemo] = useState('');
 
   useEffect(() => {
     fetchHabits();
@@ -52,11 +56,11 @@ export default function Home() {
 
   const fetchCompletions = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD形式
+      const today = new Date().toISOString().split('T')[0];
 
       const { data, error } = await supabase
         .from('completion_logs')
-        .select('habit_id')
+        .select('habit_id, memo')
         .eq('completed_date', today);
 
       if (error) {
@@ -66,6 +70,13 @@ export default function Home() {
 
       const completedIds = new Set(data?.map(log => log.habit_id) || []);
       setCompletedHabitIds(completedIds);
+
+      // メモのマップを作成
+      const memoMap = new Map(
+        data?.map(log => [log.habit_id, log.memo]) || []
+      );
+      setCompletionMemos(memoMap);
+
       console.log('✅ 今日の完了記録:', completedIds);
     } catch (err) {
       console.error('予期しないエラー:', err);
@@ -78,7 +89,7 @@ export default function Home() {
 
     try {
       if (isCompleted) {
-        // 完了記録を削除
+        // チェックを外す：完了記録を削除
         const { error } = await supabase
           .from('completion_logs')
           .delete()
@@ -90,37 +101,60 @@ export default function Home() {
           return;
         }
 
-        // Stateから削除
         const newCompleted = new Set(completedHabitIds);
         newCompleted.delete(habitId);
         setCompletedHabitIds(newCompleted);
         console.log('✅ 完了記録を削除しました');
       } else {
-        // 完了記録を追加
-        const { error } = await supabase
-          .from('completion_logs')
-          .insert([
-            {
-              habit_id: habitId,
-              completed_date: today,
-              completed_at: new Date().toISOString(),
-              memo: null,
-            }
-          ]);
-
-        if (error) {
-          console.error('完了記録の追加に失敗しました:', error);
-          return;
-        }
-
-        // Stateに追加
-        const newCompleted = new Set(completedHabitIds);
-        newCompleted.add(habitId);
-        setCompletedHabitIds(newCompleted);
-        console.log('✅ 完了記録を追加しました');
+        // チェックを入れる：メモ入力モーダルを開く
+        setCurrentHabitId(habitId);
+        setMemo('');
+        setIsMemoModalOpen(true);
       }
     } catch (err) {
       console.error('予期しないエラー:', err);
+    }
+  };
+
+  const handleSaveMemo = async () => {
+    if (!currentHabitId) return;
+
+    const today = new Date().toISOString().split('T')[0];
+
+    try {
+      const { error } = await supabase
+        .from('completion_logs')
+        .insert([
+          {
+            habit_id: currentHabitId,
+            completed_date: today,
+            completed_at: new Date().toISOString(),
+            memo: memo.trim() || null,
+          }
+        ]);
+
+      if (error) {
+        console.error('完了記録の追加に失敗しました:', error);
+        alert('完了記録の追加に失敗しました。もう一度お試しください。');
+        return;
+      }
+
+      const newCompleted = new Set(completedHabitIds);
+      newCompleted.add(currentHabitId);
+      setCompletedHabitIds(newCompleted);
+
+      console.log('✅ 完了記録を追加しました（メモ付き）');
+
+      // モーダルを閉じる
+      setIsMemoModalOpen(false);
+      setCurrentHabitId(null);
+      setMemo('');
+
+      // 完了記録を再取得してメモを表示
+      await fetchCompletions();
+    } catch (err) {
+      console.error('予期しないエラー:', err);
+      alert('予期しないエラーが発生しました。');
     }
   };
 
@@ -211,28 +245,40 @@ export default function Home() {
                 <div className="space-y-3 mb-6">
                   {habits.map((habit) => {
                     const isCompleted = completedHabitIds.has(habit.id);
+                    const habitMemo = completionMemos.get(habit.id);
 
                     return (
-                      <div
-                        key={habit.id}
-                        className="flex items-center gap-3 p-4 bg-gray-800 rounded-lg hover:bg-gray-750 transition-colors"
-                      >
-                        <input
-                          type="checkbox"
-                          id={`habit-${habit.id}`}
-                          checked={isCompleted}
-                          onChange={() => handleToggleCompletion(habit.id)}
-                          className="w-5 h-5 rounded border-gray-600 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-gray-900 cursor-pointer"
-                        />
-                        <label
-                          htmlFor={`habit-${habit.id}`}
-                          className={`flex-1 cursor-pointer transition-all ${isCompleted ? 'line-through text-gray-500' : ''
-                            }`}
-                        >
-                          {habit.title}
-                        </label>
-                        {isCompleted && (
-                          <span className="text-emerald-400 text-sm">✓</span>
+                      <div key={habit.id} className="space-y-2">
+                        <div className="flex items-center gap-3 p-4 bg-gray-800 rounded-lg hover:bg-gray-750 transition-colors">
+                          <input
+                            type="checkbox"
+                            id={`habit-${habit.id}`}
+                            checked={isCompleted}
+                            onChange={() => handleToggleCompletion(habit.id)}
+                            className="w-5 h-5 rounded border-gray-600 text-emerald-500 focus:ring-emerald-500 focus:ring-offset-gray-900 cursor-pointer"
+                          />
+                          <label
+                            htmlFor={`habit-${habit.id}`}
+                            className={`flex-1 cursor-pointer transition-all ${isCompleted ? 'line-through text-gray-500' : ''
+                              }`}
+                          >
+                            {habit.title}
+                          </label>
+                          {isCompleted && (
+                            <span className="text-emerald-400 text-sm">✓</span>
+                          )}
+                        </div>
+
+                        {/* メモの表示 */}
+                        {isCompleted && habitMemo && (
+                          <div className="ml-12 px-4 py-2 bg-gray-850 rounded-lg border-l-2 border-emerald-500">
+                            <div className="flex items-start gap-2">
+                              <span className="text-emerald-400 text-sm mt-0.5">💬</span>
+                              <p className="text-sm text-gray-300 italic">
+                                {habitMemo}
+                              </p>
+                            </div>
+                          </div>
                         )}
                       </div>
                     );
@@ -308,6 +354,51 @@ export default function Home() {
             </div>
           </div>
         )}
+
+        {isMemoModalOpen && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800">
+              <h2 className="text-2xl font-bold mb-4">今日の一言メモ</h2>
+              <p className="text-sm text-gray-400 mb-6">
+                完了した感想や気づきを記録しましょう（任意）
+              </p>
+
+              <div className="mb-6">
+                <textarea
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  maxLength={200}
+                  placeholder="例: 今日は調子が良かった！"
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-emerald-500 text-white placeholder-gray-500 resize-none"
+                  rows={4}
+                />
+                <p className="text-sm text-gray-500 mt-2">
+                  {memo.length} / 200 文字
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setIsMemoModalOpen(false);
+                    setCurrentHabitId(null);
+                    setMemo('');
+                  }}
+                  className="flex-1 px-4 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleSaveMemo}
+                  className="flex-1 px-4 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors"
+                >
+                  {memo.trim() ? '保存' : 'メモなしで保存'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </div>
     </main>
   );
