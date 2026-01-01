@@ -24,6 +24,9 @@ export default function Home() {
   const [isMemoModalOpen, setIsMemoModalOpen] = useState(false);
   const [currentHabitId, setCurrentHabitId] = useState<string | null>(null);
   const [memo, setMemo] = useState('');
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
+  const [editTitle, setEditTitle] = useState('');
 
   useEffect(() => {
     fetchHabits();
@@ -158,6 +161,77 @@ export default function Home() {
     }
   };
 
+  const handleDeleteHabit = async (habit: Habit) => {
+    const confirmDelete = window.confirm(
+      `「${habit.title}」を削除してもよろしいですか？\n\n完了記録も全て削除されます。`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      const { error } = await supabase
+        .from('habits')
+        .delete()
+        .eq('id', habit.id);
+
+      if (error) {
+        console.error('習慣の削除に失敗しました:', error);
+        alert('習慣の削除に失敗しました。もう一度お試しください。');
+        return;
+      }
+
+      console.log('✅ 習慣を削除しました');
+
+      // 習慣一覧を再取得
+      await fetchHabits();
+      await fetchCompletions();
+    } catch (err) {
+      console.error('予期しないエラー:', err);
+      alert('予期しないエラーが発生しました。');
+    }
+  };
+
+  // 編集機能
+  const handleEditHabit = (habit: Habit) => {
+    setEditingHabit(habit);
+    setEditTitle(habit.title);
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateHabit = async () => {
+    if (!editingHabit || !editTitle.trim()) {
+      alert('習慣名を入力してください。');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('habits')
+        .update({ title: editTitle.trim() })
+        .eq('id', editingHabit.id);
+
+      if (error) {
+        console.error('習慣の更新に失敗しました:', error);
+        alert('習慣の更新に失敗しました。もう一度お試しください。');
+        return;
+      }
+
+      console.log('✅ 習慣を更新しました');
+
+      // モーダルを閉じる
+      setIsEditModalOpen(false);
+      setEditingHabit(null);
+      setEditTitle('');
+
+      // 習慣一覧を再取得
+      await fetchHabits();
+    } catch (err) {
+      console.error('予期しないエラー:', err);
+      alert('予期しないエラーが発生しました。');
+    }
+  };
+  // ここまで追加
+
   const handleAddHabit = async () => {
     // 空白チェック
 
@@ -264,9 +338,30 @@ export default function Home() {
                           >
                             {habit.title}
                           </label>
-                          {isCompleted && (
-                            <span className="text-emerald-400 text-sm">✓</span>
-                          )}
+
+                          {/* ここから追加 */}
+                          <div className="flex items-center gap-2">
+                            {isCompleted && (
+                              <span className="text-emerald-400 text-sm">✓</span>
+                            )}
+
+                            <button
+                              onClick={() => handleEditHabit(habit)}
+                              className="p-2 hover:bg-gray-700 rounded transition-colors"
+                              title="編集"
+                            >
+                              <span className="text-lg">✏️</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteHabit(habit)}
+                              className="p-2 hover:bg-gray-700 rounded transition-colors"
+                              title="削除"
+                            >
+                              <span className="text-lg">🗑️</span>
+                            </button>
+                          </div>
+                          {/* ここまで追加 */}
                         </div>
 
                         {/* メモの表示 */}
@@ -393,6 +488,52 @@ export default function Home() {
                   className="flex-1 px-4 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg transition-colors"
                 >
                   {memo.trim() ? '保存' : 'メモなしで保存'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 編集モーダル */}
+        {isEditModalOpen && editingHabit && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800">
+              <h2 className="text-2xl font-bold mb-6">習慣を編集</h2>
+
+              <div className="mb-6">
+                <label htmlFor="editTitle" className="block text-sm font-medium text-gray-300 mb-2">
+                  習慣名（最大50文字）
+                </label>
+                <input
+                  id="editTitle"
+                  type="text"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  maxLength={50}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-emerald-500 text-white"
+                />
+                <p className="text-sm text-gray-500 mt-2">
+                  {editTitle.length} / 50 文字
+                </p>
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    setEditingHabit(null);
+                    setEditTitle('');
+                  }}
+                  className="flex-1 px-4 py-3 bg-gray-800 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button
+                  onClick={handleUpdateHabit}
+                  disabled={!editTitle.trim()}
+                  className="flex-1 px-4 py-3 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg transition-colors"
+                >
+                  保存
                 </button>
               </div>
             </div>
