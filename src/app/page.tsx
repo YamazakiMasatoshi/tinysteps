@@ -885,8 +885,8 @@ export default function Home() {
                   >
                     <div className="text-sm">{day}</div>
                     {hasCompletions && (
-                      <div className="flex gap-0.5 mt-1">
-                        {Array.from(completedHabits).slice(0, 3).map((habitId) => (
+                      <div className="flex gap-0.5 mt-1 flex-wrap justify-center">
+                        {Array.from(completedHabits).slice(0, 7).map((habitId) => (
                           <div
                             key={habitId}
                             className={`w-1.5 h-1.5 rounded-full ${getHabitColor(habitId)}`}
