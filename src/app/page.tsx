@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 
 type Habit = {
@@ -12,6 +12,32 @@ type Habit = {
   created_at: string;
   updated_at: string;
 }
+
+// 日本時間（JST）で今日の日付を取得する関数
+const getTodayInJST = (): string => {
+  const now = new Date();
+  // JSTはUTC+9なので、UTC時刻に9時間を加算してJST時刻を取得
+  const jstOffset = 9 * 60 * 60 * 1000; // 9時間をミリ秒に変換
+  const jstTime = new Date(now.getTime() + jstOffset);
+  // UTC時刻として扱って日付文字列を取得（YYYY-MM-DD形式）
+  const year = jstTime.getUTCFullYear();
+  const month = String(jstTime.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(jstTime.getUTCDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+// 日本時間（JST）で現在の日付情報を取得する関数
+const getTodayDateInJST = () => {
+  const now = new Date();
+  // JSTはUTC+9なので、UTC時刻に9時間を加算してJST時刻を取得
+  const jstOffset = 9 * 60 * 60 * 1000; // 9時間をミリ秒に変換
+  const jstTime = new Date(now.getTime() + jstOffset);
+  return {
+    year: jstTime.getUTCFullYear(),
+    month: jstTime.getUTCMonth() + 1, // 0-indexed to 1-indexed
+    day: jstTime.getUTCDate(),
+  };
+};
 
 export default function Home() {
   const [connectionStatus, setConnectionStatus] = useState<string>('確認中...');
@@ -36,6 +62,36 @@ export default function Home() {
     fetchHabits();
     fetchCompletions();
     fetchMonthlyCompletions(currentMonth);
+  }, []);
+
+  useEffect(() => {
+    // 日付が変わったら完了記録をリセット
+    const checkDateChange = () => {
+      const today = getTodayInJST();
+      const lastCheckDate = localStorage.getItem('lastCheckDate');
+
+      if (lastCheckDate !== today) {
+        // 日付が変わった！
+        console.log('📅 日付が変わりました:', lastCheckDate, '→', today);
+
+        // 完了記録をクリア
+        setCompletedHabitIds(new Set());
+
+        // 今日の完了記録を再取得
+        fetchCompletions();
+
+        // 最終チェック日を更新
+        localStorage.setItem('lastCheckDate', today);
+      }
+    };
+
+    // 初回チェック
+    checkDateChange();
+
+    // 1分ごとに日付変更をチェック
+    const interval = setInterval(checkDateChange, 60000); // 60秒 = 1分
+
+    return () => clearInterval(interval);
   }, []);
 
   const fetchHabits = async () => {
@@ -64,7 +120,7 @@ export default function Home() {
 
   const fetchCompletions = async () => {
     try {
-      const today = new Date().toISOString().split('T')[0];
+      const today = getTodayInJST();
 
       const { data, error } = await supabase
         .from('completion_logs')
@@ -170,12 +226,16 @@ export default function Home() {
     return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
   };
 
+  // 今日の日付をuseMemoで計算（リロード直後でも確実に動作するように）
+  const todayDate = useMemo(() => {
+    return getTodayDateInJST();
+  }, []); // 空の依存配列で、コンポーネントのマウント時に一度だけ計算
+
   const isToday = (year: number, month: number, day: number) => {
-    const today = new Date();
     return (
-      today.getFullYear() === year &&
-      today.getMonth() + 1 === month &&
-      today.getDate() === day
+      todayDate.year === year &&
+      todayDate.month === month &&
+      todayDate.day === day
     );
   };
 
@@ -211,7 +271,7 @@ export default function Home() {
 
   const handleToggleCompletion = async (habitId: string) => {
     const isCompleted = completedHabitIds.has(habitId);
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayInJST();
 
     try {
       if (isCompleted) {
@@ -245,7 +305,7 @@ export default function Home() {
   const handleSaveMemo = async () => {
     if (!currentHabitId) return;
 
-    const today = new Date().toISOString().split('T')[0];
+    const today = getTodayInJST();
 
     try {
       const { error } = await supabase
@@ -523,8 +583,17 @@ export default function Home() {
         </div>
 
         {isModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800">
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => {
+              setIsModalOpen(false);
+              setHabitTitle('');
+            }}
+          >
+            <div 
+              className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800"
+              onClick={(e) => e.stopPropagation()}
+            >
               <h2 className="text-2xl font-bold mb-6">新しい習慣を追加</h2>
 
               <div className="mb-6">
@@ -568,8 +637,18 @@ export default function Home() {
         )}
 
         {isMemoModalOpen && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800">
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => {
+              setIsMemoModalOpen(false);
+              setCurrentHabitId(null);
+              setMemo('');
+            }}
+          >
+            <div 
+              className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800"
+              onClick={(e) => e.stopPropagation()}
+            >
               <h2 className="text-2xl font-bold mb-4">今日の一言メモ</h2>
               <p className="text-sm text-gray-400 mb-6">
                 完了した感想や気づきを記録しましょう（任意）
@@ -613,8 +692,18 @@ export default function Home() {
 
         {/* 編集モーダル */}
         {isEditModalOpen && editingHabit && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800">
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => {
+              setIsEditModalOpen(false);
+              setEditingHabit(null);
+              setEditTitle('');
+            }}
+          >
+            <div 
+              className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800"
+              onClick={(e) => e.stopPropagation()}
+            >
               <h2 className="text-2xl font-bold mb-6">習慣を編集</h2>
 
               <div className="mb-6">
@@ -659,8 +748,17 @@ export default function Home() {
 
         {/* 日付詳細モーダル */}
         {selectedDate && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800 max-h-[80vh] overflow-y-auto">
+          <div 
+            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
+            onClick={() => {
+              setSelectedDate(null);
+              setSelectedDateCompletions([]);
+            }}
+          >
+            <div 
+              className="bg-gray-900 rounded-xl p-8 max-w-md w-full mx-4 border border-gray-800 max-h-[80vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
               <h2 className="text-2xl font-bold mb-6">
                 {new Date(selectedDate + 'T00:00:00').toLocaleDateString('ja-JP', {
                   year: 'numeric',
@@ -771,19 +869,19 @@ export default function Home() {
                 const dateStr = formatDate(year, month, day);
                 const completedHabits = monthlyCompletions.get(dateStr);
                 const hasCompletions = completedHabits && completedHabits.size > 0;
-                const today = isToday(year, month, day);
+                const today = isToday(year, month, day); // ← この行が重要
 
                 return (
                   <div
                     key={day}
                     onClick={() => hasCompletions && fetchDateCompletions(dateStr)}
                     className={`
-                    aspect-square flex flex-col items-center justify-center rounded-lg
-                    ${today ? 'ring-2 ring-blue-500' : ''}
-                    ${hasCompletions ? 'bg-emerald-900 bg-opacity-30' : 'bg-gray-800'}
-                    ${hasCompletions ? 'hover:bg-opacity-50 cursor-pointer' : ''}
-                    transition-all
-                  `}
+                      aspect-square flex flex-col items-center justify-center rounded-lg
+                      ${today ? 'ring-4 ring-blue-500 border-2 border-blue-400' : ''}
+                      ${hasCompletions ? 'bg-emerald-900 bg-opacity-30' : 'bg-gray-800'}
+                      ${hasCompletions ? 'hover:bg-opacity-50 cursor-pointer' : ''}
+                      transition-all
+                    `}
                   >
                     <div className="text-sm">{day}</div>
                     {hasCompletions && (
